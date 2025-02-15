@@ -26,6 +26,7 @@ let db;
 
   } catch (error) {
     console.error("Failed to connect to MongoDB", error);
+    process.exit(1); // Exit the process if DB connection fail
   }
 })();
 
