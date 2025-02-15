@@ -181,8 +181,8 @@ app.post('/api/scanfood', upload.single('file'), async (req, res) => {
       return res.status(500).json({ message: "Error uploading file to envs.sh" });
     }
 
-    // Extract the URL from the response
-    const fileUrl = response.data.replace('\n', '').replace('https://envs.sh/', '');
+    // Extract the URL from the response and ensure it includes the protocol
+    const fileUrl = `https://envs.sh/${response.data.replace('\n', '').replace('https://envs.sh/', '')}`;
 
     // Send the URL back to the client
     res.status(200).json({ url: fileUrl });
