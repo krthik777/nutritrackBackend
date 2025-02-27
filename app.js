@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb'); // Import ObjectId
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios'); // Add axios for making HTTP requests
@@ -51,6 +51,7 @@ app.get('/api/allergens', async (req, res) => {
   }
 });
 
+// Allergens POST
 app.post('/api/allergens', async (req, res) => {
   try {
     const allergen = req.body;
@@ -61,6 +62,35 @@ app.post('/api/allergens', async (req, res) => {
     res.status(201).json(allergen);
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Allergens DELETE by ID
+app.delete('/api/allergens/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate the ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid allergen ID." });
+    }
+
+    // Convert the ID to an ObjectId
+    const objectId = new ObjectId(id);
+
+    // Delete the allergen from the database
+    const result = await db.collection('allergens').deleteOne({ _id: objectId });
+
+    // Check if the allergen was found and deleted
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Allergen not found." });
+    }
+
+    // Return success response
+    res.status(200).json({ message: "Allergen deleted successfully." });
+  } catch (error) {
+    console.error('Error deleting allergen:', error);
+    res.status(500).json({ message: "Failed to delete allergen. Please try again later." });
   }
 });
 
@@ -78,6 +108,7 @@ app.get('/api/mealPlanner', async (req, res) => {
   }
 });
 
+// MealPlanner POST
 app.post('/api/mealPlanner', async (req, res) => {
   try {
     const meal = req.body;
@@ -109,6 +140,7 @@ app.get('/api/profile', async (req, res) => {
   }
 });
 
+// Profile POST
 app.post('/api/profile', async (req, res) => {
   try {
     const profile = req.body;
@@ -132,6 +164,7 @@ app.post('/api/profile', async (req, res) => {
   }
 });
 
+// Check if profile details exist
 app.get('/api/hasdetails', async (req, res) => {
   const { email } = req.query;
 
@@ -152,9 +185,7 @@ app.get('/api/hasdetails', async (req, res) => {
   }
 });
 
-const FormData = require('form-data'); // Import the form-data library
-
-// New Route: /api/scanfood for file uploads to envs.sh
+// File upload for scanning food
 app.post('/api/scanfood', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
