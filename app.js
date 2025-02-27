@@ -223,6 +223,83 @@ app.post('/api/scanfood', upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/foodLog', async (req, res) => {
+  try {
+    const { email, dishName, calories, ingredients, servingSize, healthiness } = req.body;
+
+    if (!email || !dishName || !calories || !ingredients || !servingSize || !healthiness) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    // Save the food log to the database
+    await db.collection('foodLog').insertOne({
+      email,
+      dishName,
+      calories,
+      ingredients,
+      servingSize,
+      healthiness,
+      timestamp: new Date(),
+    });
+
+    res.status(201).json({ message: "Food log saved successfully." });
+  } catch (error) {
+    console.error('Error saving food log:', error);
+    res.status(500).json({ message: "Failed to save food log. Please try again later." });
+  }
+});
+
+// FoodLog GET with email filter
+app.get('/api/foodLog', async (req, res) => {
+  const { email } = req.query;
+  try {
+    if (!email) {
+      return res.status(400).json({ message: "Email is required to fetch food logs." });
+    }
+    const foodLogs = await db.collection('foodLog').find({ email }).toArray();
+    res.json(foodLogs);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/uploadImage', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded." });
+    }
+
+    // Create a new FormData instance
+    const form = new FormData();
+
+    // Append the file buffer to the form data
+    form.append('file', req.file.buffer, {
+      filename: req.file.originalname, // Use the original file name
+      contentType: req.file.mimetype,  // Use the file's MIME type
+    });
+
+    // Upload the file to envs.sh
+    const response = await axios.post('https://envs.sh', form, {
+      headers: {
+        ...form.getHeaders(), // Include the form-data headers
+      },
+    });
+
+    if (response.status !== 200) {
+      return res.status(500).json({ message: "Error uploading file to envs.sh" });
+    }
+
+    // Extract the URL from the response and ensure it includes the protocol
+    const fileUrl = `https://envs.sh/${response.data.replace('\n', '').replace('https://envs.sh/', '')}`;
+
+    // Send the URL back to the client
+    res.status(200).json({ url: fileUrl });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({ message: "Error processing file upload" });
+  }
+});
+
 // Server Listening
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
