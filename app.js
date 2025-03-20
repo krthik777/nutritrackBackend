@@ -300,6 +300,67 @@ app.post('/api/uploadImage', upload.single('file'), async (req, res) => {
   }
 });
 
+// Add this route to your backend code
+app.get('/api/weeklycalo', async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+      return res.status(400).json({ message: "Email is required." });
+  }
+
+  try {
+      // Get current date and calculate week boundaries
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+      endOfWeek.setHours(23, 59, 59, 999);
+
+      // Aggregate calories by day of week
+      const weeklyData = await db.collection('foodLog').aggregate([
+          {
+              $match: {
+                  email: email,
+                  timestamp: {
+                      $gte: startOfWeek,
+                      $lte: endOfWeek
+                  }
+              }
+          },
+          {
+              $group: {
+                  _id: {
+                      $dayOfWeek: "$timestamp"
+                  },
+                  totalCalories: { $sum: "$calories" }
+              }
+          }
+      ]).toArray();
+
+      // Create default structure for all days
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const result = days.map(day => ({
+          day,
+          calories: 0
+      }));
+
+      // MongoDB $dayOfWeek returns 1=Sunday to 7=Saturday
+      weeklyData.forEach(item => {
+          const dayIndex = (item._id - 1) % 7; // Convert to 0-based index
+          result[dayIndex].calories = item.totalCalories;
+      });
+
+      res.json(result);
+
+  } catch (error) {
+      console.error('Error fetching weekly calories:', error);
+      res.status(500).json({ message: "Failed to fetch weekly calories" });
+  }
+});
+
 // Server Listening
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
