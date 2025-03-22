@@ -6,6 +6,7 @@ const cors = require('cors');
 const axios = require('axios'); // Add axios for making HTTP requests
 const multer = require('multer'); // Add multer for handling file uploads
 
+
 const app = express();
 
 // Middleware
@@ -223,46 +224,6 @@ app.post('/api/scanfood', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/foodLog', async (req, res) => {
-  try {
-    const { email, dishName, calories, ingredients, servingSize, healthiness } = req.body;
-
-    if (!email || !dishName || !calories || !ingredients || !servingSize || !healthiness) {
-      return res.status(400).json({ message: "All fields are required." });
-    }
-
-    // Save the food log to the database
-    await db.collection('foodLog').insertOne({
-      email,
-      dishName,
-      calories,
-      ingredients,
-      servingSize,
-      healthiness,
-      timestamp: new Date(),
-    });
-
-    res.status(201).json({ message: "Food log saved successfully." });
-  } catch (error) {
-    console.error('Error saving food log:', error);
-    res.status(500).json({ message: "Failed to save food log. Please try again later." });
-  }
-});
-
-// FoodLog GET with email filter
-app.get('/api/foodLog', async (req, res) => {
-  const { email } = req.query;
-  try {
-    if (!email) {
-      return res.status(400).json({ message: "Email is required to fetch food logs." });
-    }
-    const foodLogs = await db.collection('foodLog').find({ email }).toArray();
-    res.json(foodLogs);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
 app.post('/api/uploadImage', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -300,67 +261,147 @@ app.post('/api/uploadImage', upload.single('file'), async (req, res) => {
   }
 });
 
-// Add this route to your backend code
+app.post('/api/foodlog', async (req, res) => {
+  try {
+    const { 
+      email, 
+      dishName, 
+      calories, 
+      protein,       // Added protein
+      carbs,         // Added carbs
+      fat,           // Added fat
+      ingredients, 
+      servingSize, 
+      healthiness 
+    } = req.body;
+
+    // Updated validation check
+    if (!email || !dishName || !calories || !protein || !carbs || !fat || !ingredients || !servingSize || !healthiness) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
+    await db.collection('foodLog').insertOne({
+      email,
+      dishName,
+      calories: Number(calories),
+      protein: Number(protein),
+      carbs: Number(carbs),
+      fat: Number(fat),
+      ingredients,
+      servingSize,
+      healthiness,
+      timestamp: new Date(),
+    });
+
+    res.status(201).json({ message: "Food log saved successfully." });
+  } catch (error) {
+    console.error('Error saving food log:', error);
+    res.status(500).json({ message: "Failed to save food log. Please try again later." });
+  }
+});
+
+// Modified FoodLog GET endpoint
+app.get('/api/foodlog', async (req, res) => {
+  const { email } = req.query;
+  try {
+    if (!email) {
+      return res.status(400).json({ message: "Email is required to fetch food logs." });
+    }
+    const foodLogs = await db.collection('foodLog')
+      .find({ email })
+      .sort({ timestamp: -1 })  // Newest first
+      .toArray();
+      
+    // Transform data for frontend
+    const transformed = foodLogs.map(log => ({
+      ...log,
+      id: log._id.toString(),
+      timestamp: log.timestamp.toISOString()
+    }));
+    
+    res.json(transformed);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Enhanced Weekly Calories endpoint
 app.get('/api/weeklycalo', async (req, res) => {
   const { email } = req.query;
 
   if (!email) {
-      return res.status(400).json({ message: "Email is required." });
+    return res.status(400).json({ message: "Email is required." });
   }
 
   try {
-      // Get current date and calculate week boundaries
-      const now = new Date();
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
-      endOfWeek.setHours(23, 59, 59, 999);
-
-      // Aggregate calories by day of week
-      const weeklyData = await db.collection('foodLog').aggregate([
-          {
-              $match: {
-                  email: email,
-                  timestamp: {
-                      $gte: startOfWeek,
-                      $lte: endOfWeek
-                  }
-              }
-          },
-          {
-              $group: {
-                  _id: {
-                      $dayOfWeek: "$timestamp"
-                  },
-                  totalCalories: { $sum: "$calories" }
-              }
+    const weeklyData = await db.collection('foodLog').aggregate([
+      {
+        $match: {
+          email: email // Only filter by email, no date restriction
+        }
+      },
+      {
+        $addFields: {
+          // Extract date parts in UTC
+          date: {
+            $dateFromParts: {
+              year: { $year: "$timestamp" },
+              month: { $month: "$timestamp" },
+              day: { $dayOfMonth: "$timestamp" },
+              timezone: "UTC"
+            }
           }
-      ]).toArray();
+        }
+      },
+      {
+        $group: {
+          _id: {
+            dayOfWeek: { 
+              $dayOfWeek: {
+                date: "$date",
+                timezone: "UTC"
+              }
+            }
+          },
+          totalCalories: { $sum: "$calories" },
+          totalProtein: { $sum: "$protein" }, // Changed to sum instead of avg
+          totalCarbs: { $sum: "$carbs" },    // Changed to sum instead of avg
+          totalFat: { $sum: "$fat" }         // Changed to sum instead of avg
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          dayOfWeek: "$_id.dayOfWeek",
+          calories: "$totalCalories",
+          protein: { $round: ["$totalProtein", 0] },
+          carbs: { $round: ["$totalCarbs", 0] },
+          fat: { $round: ["$totalFat", 0] }
+        }
+      }
+    ]).toArray();
 
-      // Create default structure for all days
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const result = days.map(day => ({
-          day,
-          calories: 0
-      }));
+    // Map to all days of week
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const result = days.map((day, index) => {
+      const dayNumber = index + 1;
+      const data = weeklyData.find(d => d.dayOfWeek === dayNumber);
+      
+      return {
+        day,
+        calories: data?.calories || 0,
+        protein: data?.protein || 0,
+        carbs: data?.carbs || 0,
+        fat: data?.fat || 0
+      };
+    });
 
-      // MongoDB $dayOfWeek returns 1=Sunday to 7=Saturday
-      weeklyData.forEach(item => {
-          const dayIndex = (item._id - 1) % 7; // Convert to 0-based index
-          result[dayIndex].calories = item.totalCalories;
-      });
-
-      res.json(result);
-
+    res.json(result);
   } catch (error) {
-      console.error('Error fetching weekly calories:', error);
-      res.status(500).json({ message: "Failed to fetch weekly calories" });
+    console.error('Error fetching weekly data:', error);
+    res.status(500).json({ message: "Failed to fetch weekly data" });
   }
 });
-
 // Server Listening
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
